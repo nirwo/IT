@@ -15,6 +15,7 @@ import VDIList from './pages/VDI/VDIList';
 import VDIDetail from './pages/VDI/VDIDetail';
 import ProfileList from './pages/Profiles/ProfileList';
 import ProfileDetail from './pages/Profiles/ProfileDetail';
+import { CapacityDashboard } from './pages/Capacity';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 
@@ -102,6 +103,16 @@ function App() {
                   <ProtectedRoute>
                     <AppLayout>
                       <ProfileDetail />
+                    </AppLayout>
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/capacity" 
+                element={
+                  <ProtectedRoute>
+                    <AppLayout>
+                      <CapacityDashboard />
                     </AppLayout>
                   </ProtectedRoute>
                 } 

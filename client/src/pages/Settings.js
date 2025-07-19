@@ -10,13 +10,17 @@ import {
   Save,
   RefreshCw,
   Trash2,
-  Plus
+  Plus,
+  Moon,
+  Sun
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { toast } from 'react-toastify';
 
 const Settings = () => {
   const { user, isAdmin, updateProfile } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState('profile');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -146,6 +150,7 @@ const Settings = () => {
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
+    { id: 'appearance', label: 'Appearance', icon: theme === 'dark' ? Sun : Moon },
     { id: 'organization', label: 'Organization', icon: SettingsIcon, adminOnly: true },
     { id: 'integrations', label: 'Integrations', icon: Database, adminOnly: true },
     { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -293,6 +298,69 @@ const Settings = () => {
                   )}
                 </button>
               </form>
+            </div>
+          )}
+
+          {/* Appearance Tab */}
+          {activeTab === 'appearance' && (
+            <div className="settings-section">
+              <div className="section-header">
+                <h2>Appearance Settings</h2>
+                <p>Customize the look and feel of your dashboard</p>
+              </div>
+
+              <div className="appearance-settings">
+                <div className="theme-setting">
+                  <div className="setting-info">
+                    <h3>Theme</h3>
+                    <p>Choose between light and dark mode</p>
+                  </div>
+                  <div className="theme-options">
+                    <button
+                      onClick={() => theme !== 'light' && toggleTheme()}
+                      className={`theme-option ${theme === 'light' ? 'active' : ''}`}
+                    >
+                      <Sun size={20} />
+                      <span>Light</span>
+                    </button>
+                    <button
+                      onClick={() => theme !== 'dark' && toggleTheme()}
+                      className={`theme-option ${theme === 'dark' ? 'active' : ''}`}
+                    >
+                      <Moon size={20} />
+                      <span>Dark</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="preview-section">
+                  <h3>Preview</h3>
+                  <div className="theme-preview">
+                    <div className="preview-header">
+                      <div className="preview-title">Dashboard Preview</div>
+                      <div className="preview-actions">
+                        <div className="preview-dot"></div>
+                        <div className="preview-dot"></div>
+                        <div className="preview-dot"></div>
+                      </div>
+                    </div>
+                    <div className="preview-content">
+                      <div className="preview-sidebar">
+                        <div className="preview-nav-item active"></div>
+                        <div className="preview-nav-item"></div>
+                        <div className="preview-nav-item"></div>
+                      </div>
+                      <div className="preview-main">
+                        <div className="preview-card"></div>
+                        <div className="preview-cards">
+                          <div className="preview-small-card"></div>
+                          <div className="preview-small-card"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -639,10 +707,11 @@ const Settings = () => {
         }
         
         .settings-sidebar {
-          background: white;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-primary);
           border-radius: 8px;
           padding: 20px;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          box-shadow: var(--shadow-sm);
           height: fit-content;
         }
         
@@ -679,10 +748,11 @@ const Settings = () => {
         }
         
         .settings-content {
-          background: white;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-primary);
           border-radius: 8px;
           padding: 30px;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          box-shadow: var(--shadow-sm);
         }
         
         .settings-section {
@@ -927,6 +997,162 @@ const Settings = () => {
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+
+        .appearance-settings {
+          display: flex;
+          flex-direction: column;
+          gap: 30px;
+        }
+
+        .theme-setting {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 20px;
+          border: 1px solid var(--border-primary);
+          border-radius: 8px;
+        }
+
+        .setting-info h3 {
+          margin: 0 0 4px 0;
+          font-size: 1.1rem;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .setting-info p {
+          margin: 0;
+          color: var(--text-secondary);
+          font-size: 0.9rem;
+        }
+
+        .theme-options {
+          display: flex;
+          gap: 12px;
+        }
+
+        .theme-option {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          padding: 16px 20px;
+          background: var(--bg-secondary);
+          border: 2px solid var(--border-primary);
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.2s;
+          min-width: 80px;
+        }
+
+        .theme-option:hover {
+          border-color: var(--accent-primary);
+        }
+
+        .theme-option.active {
+          background: var(--accent-primary);
+          border-color: var(--accent-primary);
+          color: white;
+        }
+
+        .theme-option span {
+          font-size: 0.9rem;
+          font-weight: 500;
+        }
+
+        .preview-section h3 {
+          margin: 0 0 16px 0;
+          font-size: 1.1rem;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .theme-preview {
+          border: 1px solid var(--border-primary);
+          border-radius: 8px;
+          overflow: hidden;
+          background: var(--bg-secondary);
+        }
+
+        .preview-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px 16px;
+          background: var(--bg-primary);
+          border-bottom: 1px solid var(--border-primary);
+        }
+
+        .preview-title {
+          font-size: 0.9rem;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .preview-actions {
+          display: flex;
+          gap: 6px;
+        }
+
+        .preview-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: var(--text-tertiary);
+        }
+
+        .preview-content {
+          display: flex;
+          height: 120px;
+        }
+
+        .preview-sidebar {
+          width: 60px;
+          background: var(--bg-primary);
+          border-right: 1px solid var(--border-primary);
+          padding: 12px 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .preview-nav-item {
+          height: 8px;
+          border-radius: 4px;
+          background: var(--text-tertiary);
+        }
+
+        .preview-nav-item.active {
+          background: var(--accent-primary);
+        }
+
+        .preview-main {
+          flex: 1;
+          padding: 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .preview-card {
+          height: 40px;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-primary);
+          border-radius: 4px;
+        }
+
+        .preview-cards {
+          display: flex;
+          gap: 8px;
+          flex: 1;
+        }
+
+        .preview-small-card {
+          flex: 1;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-primary);
+          border-radius: 4px;
         }
         
         @media (max-width: 768px) {

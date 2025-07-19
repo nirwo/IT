@@ -8,7 +8,8 @@ import {
   Settings, 
   Users,
   Database,
-  Activity
+  Activity,
+  Server
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -32,6 +33,12 @@ const Sidebar = () => {
       path: '/profiles',
       icon: Layers,
       label: 'Profiles',
+      permission: 'read'
+    },
+    {
+      path: '/capacity',
+      icon: Server,
+      label: 'Capacity',
       permission: 'read'
     },
     {

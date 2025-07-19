@@ -15,6 +15,7 @@ const DataCollectionService = require('./services/dataCollectionService');
 const authRoutes = require('./routes/auth');
 const vdiRoutes = require('./routes/vdi');
 const profileRoutes = require('./routes/profiles');
+const capacityRoutes = require('./routes/capacity');
 
 const app = express();
 
@@ -40,6 +41,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/vdi', vdiRoutes);
 app.use('/api/profiles', profileRoutes);
+app.use('/api/capacity', capacityRoutes);
 
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/build')));

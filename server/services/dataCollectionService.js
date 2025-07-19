@@ -3,10 +3,14 @@ const VCenterService = require('./vCenterService');
 const ServiceNowService = require('./serviceNowService');
 const JiraService = require('./jiraService');
 const HyperVService = require('./hyperVService');
+const CapacityCalculationService = require('./capacityCalculationService');
 const VDI = require('../models/VDI');
 const UtilizationMetrics = require('../models/UtilizationMetrics');
 const UserActivity = require('../models/UserActivity');
 const Organization = require('../models/Organization');
+const Cluster = require('../models/Cluster');
+const ESXiHost = require('../models/ESXiHost');
+const AllocationProfile = require('../models/AllocationProfile');
 const logger = require('../config/logger');
 
 class DataCollectionService {
@@ -14,6 +18,7 @@ class DataCollectionService {
     this.isCollecting = false;
     this.services = {};
     this.scheduledJobs = [];
+    this.capacityService = new CapacityCalculationService();
   }
 
   async initializeServices() {
@@ -93,7 +98,22 @@ class DataCollectionService {
       })
     );
 
+    // Infrastructure collection - once daily
+    this.scheduledJobs.push(
+      cron.schedule(`30 ${dailyHour} * * *`, async () => {
+        await this.collectInfrastructureData();
+      })
+    );
+
+    // Capacity calculation - every 30 minutes
+    this.scheduledJobs.push(
+      cron.schedule('*/30 * * * *', async () => {
+        await this.calculateCapacities();
+      })
+    );
+
     await this.collectStaticData();
+    await this.collectInfrastructureData();
     logger.info('Data collection service started');
   }
 
@@ -454,6 +474,188 @@ class DataCollectionService {
       .select('timestamp');
     
     return lastMetric ? lastMetric.timestamp : null;
+  }
+
+  async collectInfrastructureData() {
+    try {
+      logger.info('Starting infrastructure data collection');
+      
+      const organizations = await Organization.find({ isActive: true });
+      
+      for (const org of organizations) {
+        if (this.services[org._id]?.vCenter) {
+          await this.collectVCenterInfrastructure(org, this.services[org._id].vCenter);
+        }
+      }
+
+      logger.info('Infrastructure data collection completed');
+    } catch (error) {
+      logger.error('Error in infrastructure data collection:', error);
+    }
+  }
+
+  async collectVCenterInfrastructure(organization, vCenterService) {
+    try {
+      logger.info(`Collecting vCenter infrastructure for ${organization.name}`);
+
+      // Collect clusters
+      const clusters = await vCenterService.getClusters();
+      
+      for (const clusterData of clusters) {
+        await this.processClusterData(organization, clusterData, vCenterService);
+      }
+
+      logger.info(`Completed vCenter infrastructure collection for ${organization.name}`);
+    } catch (error) {
+      logger.error(`Error collecting vCenter infrastructure for ${organization.name}:`, error);
+    }
+  }
+
+  async processClusterData(organization, clusterData, vCenterService) {
+    try {
+      const clusterDetails = await vCenterService.getClusterDetails(clusterData.cluster);
+      const transformedCluster = vCenterService.transformClusterData(clusterData, clusterDetails);
+
+      // Create or update cluster
+      let cluster = await Cluster.findOne({
+        vCenterId: transformedCluster.vCenterId,
+        organization: organization._id
+      });
+
+      if (!cluster) {
+        cluster = new Cluster({
+          ...transformedCluster,
+          organization: organization._id,
+          capacity: {
+            total: { cpu: { cores: 0, mhz: 0 }, memory: { mb: 0 }, storage: { gb: 0 } },
+            allocated: { cpu: { cores: 0, mhz: 0 }, memory: { mb: 0 }, storage: { gb: 0 } },
+            available: { cpu: { cores: 0, mhz: 0 }, memory: { mb: 0 }, storage: { gb: 0 } }
+          }
+        });
+      } else {
+        Object.assign(cluster, transformedCluster);
+        cluster.lastSync = new Date();
+      }
+
+      await cluster.save();
+
+      // Collect hosts for this cluster
+      await this.processClusterHosts(organization, cluster, clusterData.cluster, vCenterService);
+
+    } catch (error) {
+      logger.error(`Error processing cluster ${clusterData.name}:`, error);
+    }
+  }
+
+  async processClusterHosts(organization, cluster, clusterId, vCenterService) {
+    try {
+      const hosts = await vCenterService.getClusterHosts(clusterId);
+
+      for (const hostData of hosts) {
+        await this.processHostData(organization, cluster, hostData, vCenterService);
+      }
+
+      logger.info(`Processed ${hosts.length} hosts for cluster ${cluster.name}`);
+    } catch (error) {
+      logger.error(`Error processing hosts for cluster ${cluster.name}:`, error);
+    }
+  }
+
+  async processHostData(organization, cluster, hostData, vCenterService) {
+    try {
+      const [hostDetails, performanceStats] = await Promise.all([
+        vCenterService.getHostDetails(hostData.host),
+        vCenterService.getHostPerformanceStats(hostData.host)
+      ]);
+
+      const transformedHost = vCenterService.transformHostData(hostData, hostDetails, performanceStats);
+
+      // Create or update host
+      let host = await ESXiHost.findOne({
+        vCenterId: transformedHost.vCenterId,
+        organization: organization._id
+      });
+
+      if (!host) {
+        host = new ESXiHost({
+          ...transformedHost,
+          organization: organization._id,
+          cluster: cluster._id
+        });
+      } else {
+        Object.assign(host, transformedHost);
+        host.cluster = cluster._id;
+        host.lastSync = new Date();
+        host.lastHeartbeat = new Date();
+      }
+
+      await host.save();
+
+      // Get VM count for this host
+      const vms = await vCenterService.getVMsByHost(hostData.host);
+      host.vmCount = {
+        total: vms.length,
+        poweredOn: vms.filter(vm => vm.power_state === 'POWERED_ON').length
+      };
+
+      await host.save();
+
+    } catch (error) {
+      logger.error(`Error processing host ${hostData.name}:`, error);
+    }
+  }
+
+  async calculateCapacities() {
+    try {
+      logger.info('Starting capacity calculations');
+
+      const clusters = await Cluster.find({ isActive: true });
+
+      for (const cluster of clusters) {
+        try {
+          await this.capacityService.calculateClusterCapacity(cluster._id);
+          
+          // Generate automatic profiles
+          await this.capacityService.generateAutomaticProfiles(cluster._id);
+          
+        } catch (error) {
+          logger.error(`Error calculating capacity for cluster ${cluster.name}:`, error);
+        }
+      }
+
+      logger.info('Capacity calculations completed');
+    } catch (error) {
+      logger.error('Error in capacity calculations:', error);
+    }
+  }
+
+  async getInfrastructureStatus() {
+    try {
+      const [clusters, hosts, profiles] = await Promise.all([
+        Cluster.countDocuments({ isActive: true }),
+        ESXiHost.countDocuments({ isActive: true }),
+        AllocationProfile.countDocuments({ isActive: true })
+      ]);
+
+      const lastInfraSync = await Cluster.findOne()
+        .sort({ lastSync: -1 })
+        .select('lastSync');
+
+      return {
+        clusters,
+        hosts,
+        profiles,
+        lastInfrastructureSync: lastInfraSync ? lastInfraSync.lastSync : null
+      };
+    } catch (error) {
+      logger.error('Error getting infrastructure status:', error);
+      return {
+        clusters: 0,
+        hosts: 0,
+        profiles: 0,
+        lastInfrastructureSync: null
+      };
+    }
   }
 }
 

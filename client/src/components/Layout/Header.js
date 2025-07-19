@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Bell, Settings, User, LogOut, Sun, Moon } from 'lucide-react';
+import NotificationModal from '../Common/NotificationModal';
 
 const Header = () => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -28,11 +30,20 @@ const Header = () => {
               {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             </button>
             
-            <button className="header-action-btn" title="Notifications">
+            <button 
+              className="header-action-btn" 
+              title="Notifications"
+              onClick={() => setShowNotifications(true)}
+            >
               <Bell size={20} />
+              <span className="notification-badge">3</span>
             </button>
             
-            <button className="header-action-btn" title="Settings">
+            <button 
+              className="header-action-btn" 
+              title="Settings"
+              onClick={() => window.location.href = '/settings'}
+            >
               <Settings size={20} />
             </button>
           </div>
@@ -58,6 +69,11 @@ const Header = () => {
           </div>
         </div>
       </div>
+
+      <NotificationModal 
+        isOpen={showNotifications}
+        onClose={() => setShowNotifications(false)}
+      />
       
       <style jsx>{`
         .header {
@@ -110,14 +126,32 @@ const Header = () => {
           border: none;
           background: none;
           border-radius: 6px;
-          color: #6b7280;
+          color: var(--text-secondary);
           cursor: pointer;
           transition: all 0.2s;
+          position: relative;
         }
         
         .header-action-btn:hover {
-          background-color: #f3f4f6;
-          color: #374151;
+          background-color: var(--bg-tertiary);
+          color: var(--text-primary);
+        }
+
+        .notification-badge {
+          position: absolute;
+          top: -2px;
+          right: -2px;
+          background-color: #ef4444;
+          color: white;
+          font-size: 10px;
+          font-weight: 600;
+          padding: 2px 6px;
+          border-radius: 10px;
+          min-width: 16px;
+          height: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
         
         .user-menu {

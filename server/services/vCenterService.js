@@ -115,6 +115,235 @@ class VCenterService {
     }
   }
 
+  async getHostDetails(hostId) {
+    try {
+      if (!this.sessionId) {
+        await this.authenticate();
+      }
+
+      const [hostInfo, hardware, summary] = await Promise.all([
+        this.axiosInstance.get(`/rest/vcenter/host/${hostId}`),
+        this.axiosInstance.get(`/rest/vcenter/host/${hostId}/hardware`),
+        this.axiosInstance.get(`/rest/vcenter/host/${hostId}/summary`)
+      ]);
+
+      return {
+        info: hostInfo.data.value,
+        hardware: hardware.data.value,
+        summary: summary.data.value
+      };
+    } catch (error) {
+      logger.error(`Failed to fetch host details for ${hostId}:`, error.message);
+      throw error;
+    }
+  }
+
+  async getClusters() {
+    try {
+      if (!this.sessionId) {
+        await this.authenticate();
+      }
+
+      const response = await this.axiosInstance.get('/rest/vcenter/cluster');
+      return response.data.value;
+    } catch (error) {
+      logger.error('Failed to fetch clusters:', error.message);
+      throw error;
+    }
+  }
+
+  async getClusterDetails(clusterId) {
+    try {
+      if (!this.sessionId) {
+        await this.authenticate();
+      }
+
+      const [clusterInfo, summary] = await Promise.all([
+        this.axiosInstance.get(`/rest/vcenter/cluster/${clusterId}`),
+        this.axiosInstance.get(`/rest/vcenter/cluster/${clusterId}/summary`)
+      ]);
+
+      return {
+        info: clusterInfo.data.value,
+        summary: summary.data.value
+      };
+    } catch (error) {
+      logger.error(`Failed to fetch cluster details for ${clusterId}:`, error.message);
+      throw error;
+    }
+  }
+
+  async getClusterHosts(clusterId) {
+    try {
+      if (!this.sessionId) {
+        await this.authenticate();
+      }
+
+      const response = await this.axiosInstance.get(`/rest/vcenter/host?filter.clusters=${clusterId}`);
+      return response.data.value;
+    } catch (error) {
+      logger.error(`Failed to fetch hosts for cluster ${clusterId}:`, error.message);
+      throw error;
+    }
+  }
+
+  async getHostPerformanceStats(hostId) {
+    try {
+      if (!this.sessionId) {
+        await this.authenticate();
+      }
+
+      const endTime = new Date();
+      const startTime = new Date(endTime.getTime() - (60 * 60 * 1000)); // Last hour
+
+      const metrics = [
+        'cpu.usage.average',
+        'cpu.ready.summation',
+        'mem.usage.average',
+        'mem.consumed.average',
+        'mem.active.average',
+        'net.usage.average',
+        'datastore.numberReadAveraged.average',
+        'datastore.numberWriteAveraged.average'
+      ];
+
+      const querySpec = {
+        entity: { type: 'HostSystem', value: hostId },
+        intervalId: 20, // 20 second intervals
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        metricId: metrics.map(metric => ({ counterId: metric, instance: '*' }))
+      };
+
+      const response = await this.axiosInstance.post('/rest/vcenter/host/performance', querySpec);
+      return this.processPerformanceStats(response.data.value);
+    } catch (error) {
+      logger.error(`Failed to fetch performance stats for host ${hostId}:`, error.message);
+      return this.getDefaultPerformanceStats();
+    }
+  }
+
+  processPerformanceStats(performanceData) {
+    if (!performanceData || !performanceData.samples) {
+      return this.getDefaultPerformanceStats();
+    }
+
+    const stats = {
+      cpu: {
+        usage: this.extractLatestMetricValue(performanceData, 'cpu.usage.average') || 0,
+        ready: this.extractLatestMetricValue(performanceData, 'cpu.ready.summation') || 0
+      },
+      memory: {
+        usage: this.extractLatestMetricValue(performanceData, 'mem.usage.average') || 0,
+        consumed: this.extractLatestMetricValue(performanceData, 'mem.consumed.average') || 0,
+        active: this.extractLatestMetricValue(performanceData, 'mem.active.average') || 0
+      },
+      network: {
+        usage: this.extractLatestMetricValue(performanceData, 'net.usage.average') || 0
+      },
+      storage: {
+        readOps: this.extractLatestMetricValue(performanceData, 'datastore.numberReadAveraged.average') || 0,
+        writeOps: this.extractLatestMetricValue(performanceData, 'datastore.numberWriteAveraged.average') || 0
+      }
+    };
+
+    return stats;
+  }
+
+  getDefaultPerformanceStats() {
+    return {
+      cpu: { usage: 0, ready: 0 },
+      memory: { usage: 0, consumed: 0, active: 0 },
+      network: { usage: 0 },
+      storage: { readOps: 0, writeOps: 0 }
+    };
+  }
+
+  extractLatestMetricValue(performanceData, metricName) {
+    if (!performanceData || !performanceData.samples) return null;
+    
+    const metricSamples = performanceData.samples.filter(sample => 
+      sample.metricId && sample.metricId.includes(metricName)
+    );
+    
+    if (metricSamples.length === 0) return null;
+    
+    // Get the latest value
+    const latestSample = metricSamples[metricSamples.length - 1];
+    return latestSample.value;
+  }
+
+  transformHostData(hostData, hostDetails, performanceStats) {
+    const host = hostDetails.info;
+    const hardware = hostDetails.hardware;
+    const summary = hostDetails.summary;
+
+    return {
+      vCenterId: hostData.host,
+      name: hostData.name,
+      hostname: host.name,
+      hardware: {
+        vendor: hardware.vendor,
+        model: hardware.model,
+        serialNumber: hardware.serialNumber,
+        processorType: hardware.cpuModel,
+        biosVersion: hardware.biosVersion
+      },
+      capacity: {
+        cpu: {
+          cores: hardware.cpuCores || 0,
+          threads: hardware.cpuThreads || 0,
+          mhz: hardware.cpuMhz || 0,
+          sockets: hardware.cpuSockets || 0
+        },
+        memory: {
+          mb: hardware.memoryMB || 0
+        },
+        storage: {
+          datastores: hardware.datastores || []
+        }
+      },
+      utilization: {
+        cpu: {
+          usage: performanceStats.cpu.usage,
+          ready: performanceStats.cpu.ready
+        },
+        memory: {
+          usage: performanceStats.memory.usage,
+          consumed: performanceStats.memory.consumed,
+          active: performanceStats.memory.active
+        },
+        network: {
+          usage: performanceStats.network.usage
+        }
+      },
+      connectionState: summary.connectionState || 'connected',
+      powerState: summary.powerState || 'poweredOn',
+      maintenanceMode: summary.inMaintenanceMode || false,
+      version: {
+        name: summary.productName,
+        version: summary.productVersion,
+        build: summary.productBuild,
+        fullName: summary.productFullName
+      }
+    };
+  }
+
+  transformClusterData(clusterData, clusterDetails) {
+    const cluster = clusterDetails.info;
+    const summary = clusterDetails.summary;
+
+    return {
+      vCenterId: clusterData.cluster,
+      name: clusterData.name,
+      configuration: {
+        drsEnabled: cluster.drsEnabled || false,
+        haEnabled: cluster.haEnabled || false,
+        vsanEnabled: cluster.vsanEnabled || false
+      }
+    };
+  }
+
   async getVMsByHost(hostId) {
     try {
       if (!this.sessionId) {

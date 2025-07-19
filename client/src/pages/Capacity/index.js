@@ -1,0 +1,1 @@
+export { default as CapacityDashboard } from './CapacityDashboard';
